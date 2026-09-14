@@ -1,278 +1,195 @@
-import { setDoc, collection, collectionGroup, deleteDoc, doc, getDoc, getDocs, orderBy, query, updateDoc } from 'firebase/firestore';
-import { db, hasFirebaseConfig } from './firebase.js';
+import { getAssetUrl } from './assetUrl.js';
+import { deleteStoryAssets } from './storageService.js';
+import { requireSupabase } from './supabase.js';
 
+const STORY_SELECT = `
+  *,
+  category:categories(id, name, slug),
+  language:languages(id, code, name, native_name),
+  pages:story_pages(id, position, text, image_object_key, image_url, audio_object_key, audio_url, created_at, updated_at)
+`;
 
-const STORIES_COLLECTIONS = ['stories', 'story', 'Story', 'storys', 'content'];
-
-export function getFallbackStories() {
-  return [
-    {
-      id: 'fallback_story_001',
-      title: 'The Moon Boat',
-      category: 'Adventure',
-      ageGroup: '4-6',
-      readingTime: '5 min',
-      language: 'English',
-      description: 'A gentle story about curiosity and courage.',
-      moral: 'Be brave and kind.',
-      coverImage: 'https://images.unsplash.com/photo-1500534623283-312aade485b7?auto=format&fit=crop&w=900&q=80',
-      music: '',
-      status: 'published',
-      isFeatured: true,
-      isPremium: false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      pages: [{ page: 1, text: 'A little boat sailed over the moonlit sea.', imageUrl: '' }],
-    },
-    {
-      id: 'fallback_story_002',
-      title: 'The Rainbow Garden',
-      category: 'Fantasy',
-      ageGroup: '6-8',
-      readingTime: '7 min',
-      language: 'English',
-      description: 'A magical garden story for bedtime reading.',
-      moral: 'Nature teaches patience.',
-      coverImage: 'https://images.unsplash.com/photo-1465146344425-f00d5f5c8f07?auto=format&fit=crop&w=900&q=80',
-      music: '',
-      status: 'draft',
-      isFeatured: false,
-      isPremium: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      pages: [{ page: 1, text: 'A rainbow touched the garden and woke the flowers.', imageUrl: '' }],
-    },
-  ];
+function asInteger(value) {
+  const parsed = Number.parseInt(String(value ?? '').trim(), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
-function normalizeStatus(status) {
-  if (!status) {
-    return 'draft';
-  }
-
-  return String(status).toLowerCase() === 'published' ? 'published' : 'draft';
+function slugify(value) {
+  return String(value || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
 }
 
-function buildStoryId(stories) {
-  const ids = stories
-    .map((story) => story.id)
-    .filter(Boolean)
-    .map((id) => Number(id.split('_').pop()))
-    .filter((value) => !Number.isNaN(value));
+function normalizePage(row, index) {
+  const imageKey = row.image_object_key || '';
+  const imageUrl = imageKey ? getAssetUrl(imageKey) : row.image_url || '';
 
-  const nextNumber = ids.length ? Math.max(...ids) + 1 : 1;
-  return `story_${String(nextNumber).padStart(4, '0')}`;
-}
-
-function normalizeStory(document, fallbackId) {
-  const data = document.data ? document.data() : document;
   return {
-    id: document.id || fallbackId || '',
-    ...data,
-    title: data.title || data.name || '',
-    category: data.category || data.type || '',
-    coverImage: data.coverImage || data.coverImageUrl || data.image || '',
-    ageGroup: data.ageGroup || data.age || '',
-    readingTime: data.readingTime || data.readTime || data.time || '',
-    language: data.language || 'English',
-    description: data.description || data.summary || data.content || '',
-    moral: data.moral || data.lesson || '',
-    music: data.music || data.backgroundMusicUrl || data.audio || '',
-    status: normalizeStatus(data.status),
-    isFeatured: Boolean(data.isFeatured ?? data.featured ?? false),
-    isPremium: Boolean(data.isPremium ?? data.premium ?? false),
-    createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt || data.created_at || '',
-    updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate().toISOString() : data.updatedAt || data.updated_at || '',
-    pages: (data.pages || data.storyPages || []).map((page, index) => ({
-      ...page,
-      page: page.page || index + 1,
-    })),
+    id: row.id,
+    page: row.position ?? index + 1,
+    position: row.position ?? index + 1,
+    text: row.text || '',
+    imageKey,
+    imageUrl,
+    audioKey: row.audio_object_key || '',
+    audioUrl: row.audio_url || '',
+    createdAt: row.created_at || '',
+    updatedAt: row.updated_at || '',
   };
 }
 
-export function buildStoryPayload(formData) {
-  const coverImage = formData.coverImage?.trim() || formData.coverImageUrl?.trim() || '';
+export function normalizeStory(row = {}) {
+  const categoryRecord = row.category && typeof row.category === 'object' ? row.category : null;
+  const languageRecord = row.language && typeof row.language === 'object' ? row.language : null;
+  const pages = Array.isArray(row.pages) ? [...row.pages] : [];
+  const coverImageKey = row.cover_object_key || '';
+  const coverImageUrl = coverImageKey ? getAssetUrl(coverImageKey) : row.cover_url || '';
 
   return {
+    id: row.id,
+    slug: row.slug || '',
+    title: row.title || '',
+    categoryId: row.category_id || '',
+    category: categoryRecord?.name || '',
+    categoryRecord,
+    languageId: row.language_id || '',
+    language: languageRecord?.name || '',
+    languageRecord,
+    ageGroup: row.age_group || '',
+    readingTime: row.reading_time_minutes ? String(row.reading_time_minutes) : '',
+    readingTimeMinutes: row.reading_time_minutes || null,
+    description: row.description || '',
+    moral: row.moral || '',
+    coverImageKey,
+    coverImage: coverImageUrl,
+    coverImageUrl,
+    musicKey: row.music_object_key || '',
+    music: row.music_url || '',
+    status: row.status === 'published' ? 'published' : 'draft',
+    isPremium: Boolean(row.is_premium),
+    isFeatured: Boolean(row.is_featured),
+    publishedAt: row.published_at || '',
+    version: row.version || 1,
+    createdAt: row.created_at || '',
+    updatedAt: row.updated_at || '',
+    pages: pages
+      .slice()
+      .sort((first, second) => (first.position || 0) - (second.position || 0))
+      .map(normalizePage),
+  };
+}
+
+export function buildStoryPayload(formData, existingId = '') {
+  const generatedSlug = slugify(formData.slug || formData.title || 'story');
+
+  const story = {
+    slug: generatedSlug || 'story',
     title: formData.title?.trim() || '',
-    category: formData.category?.trim() || '',
-    storyId: formData.storyId?.trim() || formData.id?.trim() || '',
-    coverImage,
-    coverImageUrl: coverImage,
-    ageGroup: formData.ageGroup?.trim() || '',
-    readingTime: formData.readingTime?.trim() || '',
-    language: formData.language?.trim() || 'English',
+    category_id: formData.categoryId || null,
+    language_id: formData.languageId || null,
+    age_group: formData.ageGroup?.trim() || '',
+    reading_time_minutes: asInteger(formData.readingTime),
     description: formData.description?.trim() || '',
     moral: formData.moral?.trim() || '',
-    music: formData.music?.trim() || formData.backgroundMusicUrl?.trim() || '',
-    status: normalizeStatus(formData.status),
-    isFeatured: Boolean(formData.isFeatured ?? formData.featured),
-    isPremium: Boolean(formData.isPremium ?? formData.premium),
-    pages: (formData.pages || []).map((page, index) => {
-      const imageUrl = page.imageUrl || page.image || '';
-
-      return {
-        ...page,
-        image: imageUrl,
-        imageUrl,
-        text: page.text || '',
-        page: page.page || index + 1,
-      };
-    }),
+    cover_object_key: formData.coverImageKey || null,
+    cover_url: formData.coverImageKey ? null : formData.coverImage?.trim() || null,
+    music_object_key: formData.musicKey || null,
+    music_url: formData.music?.trim() || null,
+    status: formData.status === 'published' ? 'published' : 'draft',
+    is_premium: Boolean(formData.isPremium),
+    is_featured: Boolean(formData.isFeatured),
   };
+
+  const id = existingId || formData.id || formData.storyId;
+  if (id) story.id = id;
+  if (existingId && formData.version) story.expected_version = formData.version;
+
+  const pages = (formData.pages || []).map((page) => ({
+    ...(page.persistedId ? { id: page.persistedId } : {}),
+    text: page.text || '',
+    image_object_key: page.imageKey || null,
+    image_url: page.imageKey ? null : page.imageUrl || null,
+    audio_object_key: page.audioKey || null,
+    audio_url: page.audioUrl || null,
+  }));
+
+  return { story, pages };
+}
+
+function throwIfError(error, fallback) {
+  if (error) {
+    throw new Error(error.message || fallback);
+  }
 }
 
 export async function getStories() {
-  if (!db || !hasFirebaseConfig) {
-    throw new Error('Firebase Firestore is not configured for this app yet.');
-  }
-
-  const stories = [];
-  const errors = [];
-
-  const tryCollection = async (collectionRef, collectionName) => {
-    try {
-      const fallbackSnapshot = await getDocs(collectionRef);
-      return fallbackSnapshot.docs.map((document) => normalizeStory(document));
-    } catch (error) {
-      const message = String(error?.message || '');
-      if (message.includes('permission-denied') || message.includes('permission')) {
-        errors.push(`Firestore denied access to the ${collectionName} collection. Check your Firestore rules and Authentication settings.`);
-      } else if (!message.includes('not-found') && !message.includes('does not exist')) {
-        errors.push(message || `Unable to read the ${collectionName} collection.`);
-      }
-
-      return [];
-    }
-  };
-
-  for (const collectionName of STORIES_COLLECTIONS) {
-    const topLevelStories = await tryCollection(collection(db, collectionName), collectionName);
-    stories.push(...topLevelStories);
-
-    if (topLevelStories.length === 0) {
-      const groupStories = await tryCollection(collectionGroup(db, collectionName), collectionName);
-      stories.push(...groupStories);
-    }
-  }
-
-  const uniqueStories = stories.filter((story, index, array) => array.findIndex((candidate) => candidate.id === story.id) === index);
-
-  if (uniqueStories.length === 0) {
-    if (errors.length > 0) {
-      throw new Error(errors[0]);
-    }
-
-    throw new Error('No story documents were found in the configured Firestore project or collection.');
-  }
-
-  return uniqueStories;
-}
-
-export function getStoryCollectionCandidates(preferredCollectionName = STORIES_COLLECTIONS[0]) {
-  const candidates = [preferredCollectionName, ...STORIES_COLLECTIONS].filter(Boolean);
-  return [...new Set(candidates)];
-}
-
-async function resolveStoryDocumentRef(id, preferredCollectionName = STORIES_COLLECTIONS[0]) {
-  if (!db || !hasFirebaseConfig) {
-    return { ref: null, collectionName: preferredCollectionName || STORIES_COLLECTIONS[0] };
-  }
-
-  for (const collectionName of getStoryCollectionCandidates(preferredCollectionName)) {
-    try {
-      const storyRef = doc(db, collectionName, id);
-      const snapshot = await getDoc(storyRef);
-      if (snapshot.exists()) {
-        return { ref: storyRef, collectionName };
-      }
-
-      const collectionSnapshot = await getDocs(collection(db, collectionName));
-      const matchingDocument = collectionSnapshot.docs.find((document) => {
-        const data = document.data() || {};
-        return document.id === id || data.id === id || data.storyId === id;
-      });
-
-      if (matchingDocument) {
-        return {
-          ref: doc(db, collectionName, matchingDocument.id),
-          collectionName,
-        };
-      }
-    } catch {
-      // ignore and try the next collection
-    }
-  }
-
-  return { ref: doc(db, preferredCollectionName || STORIES_COLLECTIONS[0], id), collectionName: preferredCollectionName || STORIES_COLLECTIONS[0] };
+  const client = requireSupabase();
+  const { data, error } = await client.from('stories').select(STORY_SELECT).order('updated_at', { ascending: false });
+  throwIfError(error, 'Unable to load stories from Supabase.');
+  return (data || []).map(normalizeStory);
 }
 
 export async function getStory(id) {
-  if (!db || !hasFirebaseConfig) {
-    return null;
-  }
-
-  const { ref } = await resolveStoryDocumentRef(id);
-  if (!ref) {
-    return null;
-  }
-
-  const snapshot = await getDoc(ref);
-  return snapshot.exists() ? normalizeStory(snapshot) : null;
+  const client = requireSupabase();
+  const { data, error } = await client.from('stories').select(STORY_SELECT).eq('id', id).maybeSingle();
+  throwIfError(error, `Unable to load story ${id}.`);
+  return data ? normalizeStory(data) : null;
 }
 
+export async function saveStory(payload, existingId = '') {
+  const client = requireSupabase();
+  const { story, pages } = buildStoryPayload(payload, existingId);
+  const { data, error } = await client.rpc('admin_save_story', {
+    p_story: story,
+    p_pages: pages,
+  });
+  throwIfError(error, 'Unable to save the story.');
 
-export async function addStory(payload) {
-  if (!db || !hasFirebaseConfig) {
-    return {
-      ...payload,
-      id: `story_${Date.now()}`
-    };
+  if (!data?.story) {
+    throw new Error('Supabase saved the story but returned an unexpected response.');
   }
 
-  const stories = await getStories();
-  const storyId = buildStoryId(stories);
-  const now = new Date().toISOString();
+  return normalizeStory({ ...data.story, pages: data.pages || [] });
+}
 
-  const storyRecord = {
-    ...buildStoryPayload(payload),
-    id: storyId,
-    storyId,
-    version: 1,
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  // Use storyId as the Firestore document ID
-  const storyRef = doc(db, STORIES_COLLECTIONS[0], storyId);
-
-  await setDoc(storyRef, storyRecord);
-
-  return storyRecord;
+export async function addStory(payload) {
+  return saveStory(payload);
 }
 
 export async function updateStory(id, payload) {
-  if (!db || !hasFirebaseConfig) {
-    return { ...payload, id };
-  }
-
-  const { ref: storyRef } = await resolveStoryDocumentRef(id);
-  const storyPayload = {
-    ...buildStoryPayload(payload),
-    storyId: payload.storyId || payload.id || id,
-    updatedAt: new Date().toISOString(),
-  };
-
-  await updateDoc(storyRef, storyPayload);
-  return { ...storyPayload, id };
+  return saveStory(payload, id);
 }
 
 export async function deleteStory(id) {
-  if (!db || !hasFirebaseConfig) {
-    return id;
+  const client = requireSupabase();
+  const { data: existing, error: readError } = await client
+    .from('stories')
+    .select('id')
+    .eq('id', id)
+    .maybeSingle();
+  throwIfError(readError, `Unable to read story ${id} before deletion.`);
+
+  if (!existing) {
+    throw new Error(`Story ${id} was not found or you do not have permission to delete it.`);
   }
 
-  const storyRef = doc(db, STORIES_COLLECTIONS[0], id);
-  await deleteDoc(storyRef);
-  return id;
+  const { data: deletedRows, error: deleteError } = await client.from('stories').delete().eq('id', id).select('id');
+  throwIfError(deleteError, `Unable to delete story ${id}.`);
+
+  if (!deletedRows?.length) {
+    throw new Error(`Story ${id} was not deleted. Check the admin RLS policy and active admin membership.`);
+  }
+
+  let cleanupWarning = '';
+  try {
+    await deleteStoryAssets(id);
+  } catch (error) {
+    cleanupWarning = `The story was deleted, but some R2 assets require cleanup: ${error.message}`;
+  }
+
+  return { id, cleanupWarning };
 }

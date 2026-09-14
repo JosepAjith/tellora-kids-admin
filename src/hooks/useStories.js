@@ -1,38 +1,58 @@
 import { useCallback, useEffect, useState } from 'react';
-import { hasFirebaseConfig } from '../services/firebase.js';
+import { useAuth } from './useAuth';
 import { addStory, deleteStory, getStories, updateStory } from '../services/storyService';
+import { getCategories, getLanguages } from '../services/catalogService';
 
 export function useStories() {
+  const { isAuthenticated } = useAuth();
   const [stories, setStories] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [languages, setLanguages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   const refreshStories = useCallback(async () => {
-    if (!hasFirebaseConfig) {
+    if (!isAuthenticated) {
       setStories([]);
       setCategories([]);
-      setError('Firestore is not connected yet. Add your Firebase config to the project .env file to load stories and dashboard counts.');
+      setLanguages([]);
       setLoading(false);
       return;
     }
 
     try {
       setLoading(true);
-      const storyData = await getStories();
+      const [storyData, categoryData, languageData] = await Promise.all([
+        getStories(),
+        getCategories(),
+        getLanguages(),
+      ]);
       setStories(storyData);
-      setCategories([...new Set(storyData.map((story) => story.category).filter(Boolean))]);
+      setCategories(categoryData);
+      setLanguages(languageData);
       setError('');
     } catch (err) {
+      setStories([]);
+      setCategories([]);
+      setLanguages([]);
       setError(err.message || 'Unable to load stories.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isAuthenticated]);
 
   useEffect(() => {
-    refreshStories();
-  }, [refreshStories, hasFirebaseConfig]);
+    let active = true;
+
+    void (async () => {
+      if (!active) return;
+      await refreshStories();
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [refreshStories]);
 
   const saveStory = async (payload, existingId) => {
     if (existingId) {
@@ -43,13 +63,15 @@ export function useStories() {
 
     const addedStory = await addStory(payload);
     setStories((current) => [addedStory, ...current]);
+    await refreshStories();
     return addedStory;
   };
 
   const removeStory = async (id) => {
-    await deleteStory(id);
+    const result = await deleteStory(id);
     setStories((current) => current.filter((story) => story.id !== id));
+    return result;
   };
 
-  return { stories, categories, loading, error, refreshStories, saveStory, removeStory };
+  return { stories, categories, languages, loading, error, refreshStories, saveStory, removeStory };
 }

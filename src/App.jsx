@@ -6,6 +6,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { StoriesPage } from './pages/StoriesPage';
 import { StoryFormPage } from './pages/StoryFormPage';
 import { CategoriesPage } from './pages/CategoriesPage';
+import { LanguagesPage } from './pages/LanguagesPage';
 import { SettingsPage } from './pages/SettingsPage';
 import './App.css';
 
@@ -22,6 +23,7 @@ function App() {
             <Route path="/stories/new" element={<StoryFormPage />} />
             <Route path="/stories/:storyId/edit" element={<StoryFormPage />} />
             <Route path="/categories" element={<CategoriesPage />} />
+            <Route path="/languages" element={<LanguagesPage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Route>
         </Routes>

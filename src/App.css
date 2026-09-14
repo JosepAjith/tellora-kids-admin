@@ -259,6 +259,77 @@
   height: 16px;
 }
 
+.catalog-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 20px;
+}
+
+.catalog-form {
+  display: grid;
+  gap: 16px;
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.catalog-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.catalog-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid #eef3ef;
+}
+
+.catalog-list strong {
+  display: block;
+  color: #183a1d;
+  margin-bottom: 4px;
+}
+
+.catalog-list p {
+  margin: 0 0 4px;
+  color: #6b7a6d;
+}
+
+.catalog-list small {
+  color: #51705a;
+}
+
+.row-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.small-btn {
+  padding: 8px 12px;
+  font-size: 0.82rem;
+}
+
+.danger-btn {
+  background: #fff1f1;
+  color: #b3261e;
+}
+
+.inline-error {
+  margin: 0;
+  color: #b3261e;
+  font-weight: 600;
+}
+
+
 .form-error {
   color: #c62828;
   margin: 0;

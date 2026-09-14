@@ -18,8 +18,8 @@ export function LoginPage() {
       await login(email, password);
       const destination = location.state?.from?.pathname || '/dashboard';
       navigate(destination, { replace: true });
-    } catch (err) {
-      console.error(err);
+    } catch {
+      // The shared auth context renders the actionable error message.
     } finally {
       setSubmitting(false);
     }
@@ -58,8 +58,6 @@ export function LoginPage() {
           </label>
 
           {error ? <p className="form-error">{error}</p> : null}
-          <p className="muted-text">Demo login: admin@tellora.com / TelloraAdmin123!</p>
-
           <button className="primary-btn" type="submit" disabled={submitting}>
             {submitting ? 'Signing in…' : 'Sign in'}
           </button>

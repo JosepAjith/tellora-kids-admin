@@ -4,6 +4,7 @@ const links = [
   { to: '/dashboard', label: 'Dashboard' },
   { to: '/stories', label: 'Stories' },
   { to: '/categories', label: 'Categories' },
+  { to: '/languages', label: 'Languages' },
   { to: '/settings', label: 'Settings' },
 ];
 

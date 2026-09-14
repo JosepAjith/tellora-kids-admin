@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 const emptyStory = {
   title: '',
@@ -9,27 +9,26 @@ const emptyStory = {
 };
 
 export function StoryModal({ open, story, categories, onClose, onSave }) {
-  const [formData, setFormData] = useState(emptyStory);
-
-  useEffect(() => {
-    if (open) {
-      setFormData(
-        story
-          ? {
-              title: story.title || '',
-              category: story.category || 'Adventure',
-              summary: story.summary || '',
-              premium: Boolean(story.premium),
-              readTime: story.readTime || '5 min',
-            }
-          : emptyStory
-      );
-    }
-  }, [open, story]);
-
   if (!open) {
     return null;
   }
+
+  const storyKey = story?.id || story?.storyId || 'new';
+  return <StoryModalContent key={storyKey} story={story} categories={categories} onClose={onClose} onSave={onSave} />;
+}
+
+function StoryModalContent({ story, categories, onClose, onSave }) {
+  const [formData, setFormData] = useState(() =>
+    story
+      ? {
+          title: story.title || '',
+          category: story.category || 'Adventure',
+          summary: story.summary || '',
+          premium: Boolean(story.premium),
+          readTime: story.readTime || '5 min',
+        }
+      : emptyStory
+  );
 
   const handleSubmit = (event) => {
     event.preventDefault();

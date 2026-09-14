@@ -2,6 +2,12 @@ import { useMemo } from 'react';
 import { SidebarNav } from '../components/SidebarNav';
 import { useStories } from '../hooks/useStories';
 
+function getStoryTimestamp(value) {
+  const date = value?.toDate ? value.toDate() : new Date(value || 0);
+  const timestamp = date.getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
 export function DashboardPage() {
   const { stories, categories, loading, error } = useStories();
 
@@ -11,10 +17,6 @@ export function DashboardPage() {
     const premiumStories = stories.filter((story) => story.isPremium || story.premium).length;
     const publishedStories = stories.filter((story) => story.status === 'published').length;
     const draftStories = stories.filter((story) => story.status === 'draft').length;
-    const recentStories = [...stories]
-      .sort((first, second) => (second.createdAt?.getTime ? second.createdAt.getTime() : 0) - (first.createdAt?.getTime ? first.createdAt.getTime() : 0))
-      .slice(0, 4);
-
     return [
       { label: 'Total Stories', value: totalStories, tone: 'green' },
       { label: 'Categories', value: categories.length, tone: 'blue' },
@@ -27,7 +29,7 @@ export function DashboardPage() {
 
   const recentStories = useMemo(() => {
     return [...stories]
-      .sort((first, second) => (second.createdAt?.getTime ? second.createdAt.getTime() : 0) - (first.createdAt?.getTime ? first.createdAt.getTime() : 0))
+      .sort((first, second) => getStoryTimestamp(second.createdAt) - getStoryTimestamp(first.createdAt))
       .slice(0, 4);
   }, [stories]);
 
@@ -83,7 +85,7 @@ export function DashboardPage() {
               <h3>Quick Notes</h3>
             </div>
             <p className="muted-text">
-              The dashboard now reflects real Firestore data for stories, categories, premium/free status, and publication state.
+              The dashboard reflects live Supabase data for stories, categories, premium/free status, and publication state.
             </p>
           </article>
         </section>

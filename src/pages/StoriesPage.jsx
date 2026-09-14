@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { SidebarNav } from '../components/SidebarNav';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { useStories } from '../hooks/useStories';
@@ -7,6 +7,7 @@ import { useStories } from '../hooks/useStories';
 const PAGE_SIZE = 6;
 
 export function StoriesPage() {
+  const location = useLocation();
   const navigate = useNavigate();
   const { stories, categories, loading, error, removeStory } = useStories();
   const [search, setSearch] = useState('');
@@ -17,25 +18,55 @@ export function StoriesPage() {
   const [sortOrder, setSortOrder] = useState('newest');
   const [page, setPage] = useState(1);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [notice, setNotice] = useState(() =>
+    typeof location.state?.notice === 'string' ? location.state.notice.trim() : ''
+  );
 
-  const ageGroups = useMemo(() => [...new Set(stories.map((story) => story.ageGroup).filter(Boolean))], [stories]);
+  useEffect(() => {
+    const routedNotice = typeof location.state?.notice === 'string'
+      ? location.state.notice.trim()
+      : '';
+    if (!routedNotice) return;
+
+    navigate(`${location.pathname}${location.search}${location.hash}`, {
+      replace: true,
+      state: null,
+    });
+  }, [location.hash, location.pathname, location.search, location.state, navigate]);
+
+  const safeStories = useMemo(() => (Array.isArray(stories) ? stories : []), [stories]);
+  const safeCategories = useMemo(() => (Array.isArray(categories) ? categories : []), [categories]);
+  const categoryNames = useMemo(
+    () =>
+      safeCategories.map((category) => {
+        if (typeof category === 'string') return category;
+        return category?.name || category?.slug || 'Untitled';
+      }),
+    [safeCategories]
+  );
+
+  const ageGroups = useMemo(
+    () => [...new Set(safeStories.map((story) => story?.ageGroup).filter(Boolean))],
+    [safeStories]
+  );
 
   const filteredStories = useMemo(() => {
-    const normalizedStories = [...stories].sort((first, second) => {
-      const firstTime = first.createdAt ? new Date(first.createdAt).getTime() : 0;
-      const secondTime = second.createdAt ? new Date(second.createdAt).getTime() : 0;
+    const normalizedStories = [...safeStories].sort((first, second) => {
+      const firstTime = first?.createdAt ? new Date(first.createdAt).getTime() : 0;
+      const secondTime = second?.createdAt ? new Date(second.createdAt).getTime() : 0;
       return sortOrder === 'newest' ? secondTime - firstTime : firstTime - secondTime;
     });
 
     return normalizedStories.filter((story) => {
-      const matchesTitle = story.title?.toLowerCase().includes(search.toLowerCase());
-      const matchesCategory = categoryFilter === 'All' || story.category === categoryFilter;
-      const matchesAgeGroup = ageGroupFilter === 'All' || story.ageGroup === ageGroupFilter;
-      const matchesPremium = premiumFilter === 'All' || (premiumFilter === 'Premium' ? story.isPremium : !story.isPremium);
-      const matchesStatus = statusFilter === 'All' || story.status === statusFilter;
+      const title = String(story?.title || '').toLowerCase();
+      const matchesTitle = title.includes(search.toLowerCase());
+      const matchesCategory = categoryFilter === 'All' || story?.category === categoryFilter;
+      const matchesAgeGroup = ageGroupFilter === 'All' || story?.ageGroup === ageGroupFilter;
+      const matchesPremium = premiumFilter === 'All' || (premiumFilter === 'Premium' ? Boolean(story?.isPremium) : !story?.isPremium);
+      const matchesStatus = statusFilter === 'All' || story?.status === statusFilter;
       return matchesTitle && matchesCategory && matchesAgeGroup && matchesPremium && matchesStatus;
     });
-  }, [ageGroupFilter, categoryFilter, premiumFilter, search, sortOrder, statusFilter, stories]);
+  }, [ageGroupFilter, categoryFilter, premiumFilter, safeStories, search, sortOrder, statusFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filteredStories.length / PAGE_SIZE));
   const pagedStories = filteredStories.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -49,7 +80,8 @@ export function StoriesPage() {
       return;
     }
 
-    await removeStory(deleteTarget.id);
+    const result = await removeStory(deleteTarget.id);
+    setNotice(result?.cleanupWarning || '');
     setDeleteTarget(null);
   };
 
@@ -73,6 +105,8 @@ export function StoriesPage() {
             <span className="muted-text">{filteredStories.length} stories</span>
           </div>
 
+          {notice ? <p className="form-error" role="alert">{notice}</p> : null}
+
           <div className="filters-row">
             <label className="field compact-field">
               <span>Search</span>
@@ -83,7 +117,7 @@ export function StoriesPage() {
               <span>Category</span>
               <select value={categoryFilter} onChange={(event) => { setCategoryFilter(event.target.value); setPage(1); }}>
                 <option value="All">All</option>
-                {categories.map((category) => (
+                {categoryNames.map((category) => (
                   <option key={category} value={category}>
                     {category}
                   </option>

@@ -22,7 +22,7 @@ export function SettingsPage() {
               Logout
             </button>
           </div>
-          <p className="muted-text">Firebase auth is already wired through the shared auth context.</p>
+          <p className="muted-text">Supabase auth is managed through the shared admin session context.</p>
         </section>
       </main>
     </div>
